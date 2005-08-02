@@ -1,0 +1,23 @@
+
+INSTALLATION
+
+To install this module type the following:
+
+	perl Makefile.PL
+	make
+	make test
+	make install
+
+
+DEPENDENCIES
+
+Following modules are necessary:
+
+	Class::Accessor
+	Class::Data::Inheritable
+
+
+Please, refer to perldoc Object::Mediator for more information.
+
+
+Eugen J. Sobchenko <esobchenko@gmail.com>
