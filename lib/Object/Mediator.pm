@@ -1,5 +1,5 @@
 #
-# $Id: Mediator.pm,v 1.1 2005/07/30 09:15:30 esobchenko Exp $
+# $Id: Mediator.pm,v 1.3 2005/08/19 07:20:40 esobchenko Exp $
 
 # Simple Object Persistence
 package Object::Mediator;
@@ -15,8 +15,8 @@ use base qw(
 	Class::Data::Inheritable
 );
 
-# $Date: 2005/07/30 09:15:30 $
-our $VERSION = '0.01';
+# $Date: 2005/08/19 07:20:40 $
+our $VERSION = '0.02';
 
 # object state constants
 use constant {
@@ -202,6 +202,8 @@ sub retrieve {
 	return $self;
 }
 
+*retr = \&retrieve;
+
 sub delete () {
 	my $self = shift;
 
@@ -222,7 +224,7 @@ sub delete () {
 	return 1;
 }
 
-*remove = \&delete;
+*del = \&delete;
 
 # update database with object's in-memory state
 sub update () {
@@ -253,7 +255,7 @@ sub DESTROY {
 sub _class { return ref $_[0] || shift }
 
 #
-# dummy methods. must be overloaded in child classes
+# dummy methods
 #
 sub _set_id { 1 }
 
@@ -281,36 +283,41 @@ Object::Mediator - generic object persistence framework
 
 	use base qw( Object::Mediator );
 
-	__PACKAGE__->mk_attr ( foo bar baz );
+	__PACKAGE__->mk_attr ( qw(foo bar) );
 
 	sub _set_id {
 		my $self = shift;
 
-		$self->generate_identity();
+		my $id = generate_identity();
+
+		$self->identity( $id );
 	}
 
 	sub _insert {
 		my $self = shift;
 
-		$self->insert_in_database();
+		$db_handle->insert ( $self->id, $self->foo, $self->bar );
 	}
 
 	sub _update {
 		my $self = shift;
 
-		$self->update_in_database();
+		$db_handle->update ( $self );
 	}
 
 	sub _delete {
 		my $self = shift;
 
-		$self->delete_from_database();
+		$db_handle->delete ( $self->id );
 	}
 
 	sub _select {
 		my $self = shift;
 
-		$self->select_from_database();
+		my ( $foo, $bar ) = $db_handle->select ( $self->id );
+
+		$self->foo ( $foo );
+		$self->bar ( $bar );
 	}
 
 =head1 DESCRIPTION
@@ -320,26 +327,52 @@ framework. Main aims of development were: usage simplicity, end user transparenc
 database independency and minimization of database interaction with some
 kind of in-memory object state control system.
 
+=head2 Database independency
+
+Object::Mediator implements mapping by means of procedures described by you.
+So there are no limitations in using any DBMS/interface that you want to set for
+persistent storage for objects of your class.
+
+=head2 End user transparency
+
+Object::Mediator based classes are completely transparent to the end user.
+All operations with object persistent storage are performed implicitly.
+
 =head2 Usage simplicity
 
 The basic steps to make your objects persistent are:
 
 	1. Inherit from Object::Mediator,
 	2. Set up attributes to map with mk_attr() function,
-	3. Describe mapping procedures
+	3. Define identity and mapping procedures
 
-There are five mapping procedures you need to define in your
-module. All of them are object methods which called automatically,
-as a rule when object is destroyed or when the update() method is invoked
-manually. Here is details below:
+There are five procedures you need to define in your module.
+All of them are object methods which called automatically, as a rule
+when object is destroyed or when the update() method is invoked manually.
+These procedures does not return anything.
+
+=head3 Identity procedure definition
+
+Object identity is a property of an object that distinguishes each object from all others.
+It's usually the same as the object identifier and must be an unique value.
 
 =over 2
 
 =item _set_id()
 
-Sets object identity. Called once when new object is created.
+Generates object identity (probably uses database sequence for it) and invokes identity() method
+with newly obtained value. Called once when new object is created.
 
 =cut
+
+=back
+
+=head3 Mapping procedures definition
+
+You should define the following procedures to explain Object::Mediator how to create, retrieve
+and update objects in database:
+
+=over 2
 
 =item _select()
 
@@ -355,7 +388,6 @@ Creates object in persistent storage.
 
 =item _delete()
 
-
 Deletes object from persistent storage.
 
 =cut
@@ -368,29 +400,18 @@ Update database with object's current in-memory state.
 
 =back
 
-Now you will able to use your module and create persistent objects:
+After defining the procedures mentioned, you will be able to use your module and
+create persistent objects with it:
 
 	use Persistent; # your module
 
 	my $object = Persistent->new (
-		foo => 'bazooka',
-		bar => 'uzi',
+		foo => 'bazooka'
 	);
 
-	$object->baz ( 'shotgun' );
+	$object->bar ( 'shotgun' );
 
 Voila!
-
-=head2 End user transparency
-
-Object::Mediator based classes are completely transparent to the end user.
-All operations with object persistent storage are performed implicitly.
-
-=head2 Database independency
-
-Object::Mediator implements mapping by means of procedures described by you.
-So there are no limitations in using any DBMS/interface that you want to set for
-persistent storage for objects of your class.
 
 =head2 Minimization of database interaction
 
@@ -399,9 +420,9 @@ changes in memory. It has sense to invoke synchronization only if necessary
 and after work with the object is completed. Object::Mediator object state
 set is provided to implement this effective mapping. All objects stay in one
 of three states - NEW, MODIFIED or DELETED which determines (implies)
-corresponding procedure invokation when mapping is executed. There is also
-UPDATED flag for all of those states to prevent recurring database calls.
-It sets by update() method after synchronization finished and testifies
+corresponding procedure invocation when mapping is executed. There is also
+an UPDATED flag for all of those states to prevent recurring database calls.
+It is set by update() method after synchronization finished and testifies
 completeness of the object mapping. Here is a transition table:
 
             | State
@@ -412,7 +433,7 @@ completeness of the object mapping. Here is a transition table:
      set()  |  M/N      -      N/N     M/N     M/N      -
 
 I<State> row enumerates possible object states. I<Event> column lists
-actions/methods which affect on object's state. Note: as it will be descibed below
+actions/methods which affect on object's state. Note: as it will be described below
 the accessor methods (which are named same as attributes) are built up using
 Class::Accessor package, so all of them use set() method to perform object
 attribute value changes.
@@ -420,7 +441,7 @@ attribute value changes.
 Furthermore, Object::Mediator supports uniqueness of objects in memory. In a given
 perl interpreter there will only be one instance of any given object at one time.
 This is implemented using a simple object lookup index with weak references
-for all live objects in memory. It is not a traditional cache - when your objects
+for all alive objects in memory. It is not a traditional cache - when your objects
 go out of scope, they will be destroyed normally, and a future retrieve will
 instantiate an entirely new object. Refer to Scalar::Util::weaken function
 specification for details. The idea was inherited from Class::DBI module.
@@ -445,16 +466,16 @@ new() to set identity for newly created object.
 
 =head3 retrieve($id)
 
-Retrieves object by identity passed thru $id.
+Retrieves object by identity passed thru $id. Synonym: retr().
 
 =head3 delete($id)
 
-Deletes object by identity.
+Deletes object by identity. Synonym: del().
 
 =head3 object_autoupdate($on_or_off)
 
 Sets default value for new object's autoupdate attribute. If I<off> - update()
-method is not executed during DESTROY(). Can be changed for object idividually
+method is not executed during DESTROY(). Can be changed for object individually
 using autoupdate() object method. Default value: I<on>
 
 =head3 purge_object_index_after()
@@ -462,7 +483,7 @@ using autoupdate() object method. Default value: I<on>
 Weak references are not removed from the index when an object goes out of scope.
 This means that over time the index will grow in memory. This is really only an issue
 for long-running environments like mod_perl, but every so often we go through
-and clean out dead references to prevent it. By default, this happens evey
+and clean out dead references to prevent it. By default, this happens every
 1000 object loads, but you can change that default for your class by calling
 the purge_object_index_every() method with a number.
 
@@ -477,7 +498,7 @@ be set by identity() only once, usually in _set_id(). Synonym: id().
 
 =head3 delete()
 
-Marks current object as deleted.
+Marks current object as deleted. Synonym: del().
 
 =head3 update()
 
@@ -501,9 +522,7 @@ Eugen J. Sobchenko <esobchenko@gmail.com>
 
 =head1 SEE ALSO
 
-Currently working on some-kind of homepage for this module.
-
-Class::DBI is a perfect analogue for object-relational mapping
+Class::DBI module is a perfect but more complex analogue for object-relational mapping
 from which lot of solutions were inherited.
 
 =head1 COPYRIGHT

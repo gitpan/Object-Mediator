@@ -1,5 +1,8 @@
 Version history for Object::Mediator module
 
-Mon Aug 01 08:56:19 UTC 2005
-	- original version
+0.02: Wed Aug 18 17:22:40 UTC 2005
+	- shorter aliases for delete() and retrieve() methods
+	- pod cleanup
 
+0.01: Mon Aug 01 08:56:19 UTC 2005
+	- original version
